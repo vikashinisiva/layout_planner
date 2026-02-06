@@ -1,9 +1,9 @@
 // Metrics Dashboard Component
 
-import { useEffect, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useAppStore } from '../store/appStore';
 import { calculateMetrics, sqmToSqft } from '../utils/calculations';
-import { getRegulations } from '../data/regulations';
+import { getRegulations, calculateAllowedFSI } from '../data/regulations';
 
 export const MetricsDashboard: React.FC = () => {
   const {
@@ -13,32 +13,35 @@ export const MetricsDashboard: React.FC = () => {
     zone,
     roadWidth,
     usePremiumFSI,
-    metrics,
-    setMetrics,
   } = useAppStore();
   
-  // Calculate metrics when dependencies change
-  useEffect(() => {
-    if (site && site.area > 0) {
-      const calculatedMetrics = calculateMetrics(
-        site,
-        buildings,
-        city,
-        zone,
-        roadWidth,
-        usePremiumFSI
-      );
-      setMetrics(calculatedMetrics);
-    }
-  }, [site, buildings, city, zone, roadWidth, usePremiumFSI, setMetrics]);
+  // Calculate metrics directly using useMemo for immediate updates
+  const metrics = useMemo(() => {
+    if (!site || site.area <= 0) return null;
+    
+    return calculateMetrics(
+      site,
+      buildings,
+      city,
+      zone,
+      roadWidth,
+      usePremiumFSI
+    );
+  }, [site, buildings, city, zone, roadWidth, usePremiumFSI]);
   
-  getRegulations(city); // Load regulations for city context
+  // Get regulations for display
+  const regulations = getRegulations(city);
+  const zoneRules = regulations.zones[zone];
+  const allowedFSI = calculateAllowedFSI(roadWidth, zone, city, usePremiumFSI);
   
-  if (!metrics) {
+  // Show basic info even without complete metrics
+  if (!site || site.area <= 0) {
     return (
-      <div className="bg-white rounded-lg shadow p-4">
-        <h3 className="text-lg font-semibold mb-4">Project Metrics</h3>
-        <p className="text-gray-500 text-sm">Define site boundary to see metrics</p>
+      <div className="space-y-4">
+        <div className="bg-white rounded-lg shadow p-4">
+          <h3 className="text-lg font-semibold mb-4">Project Metrics</h3>
+          <p className="text-gray-500 text-sm">Define site boundary to see metrics</p>
+        </div>
       </div>
     );
   }
@@ -51,89 +54,99 @@ export const MetricsDashboard: React.FC = () => {
     </span>
   );
   
+  // Format large areas
+  const formatArea = (sqm: number) => {
+    if (sqm >= 10000) {
+      const hectares = sqm / 10000;
+      const acres = sqm / 4047;
+      return { value: hectares.toFixed(2), unit: 'hectares', secondary: `${acres.toFixed(2)} acres` };
+    }
+    return { value: sqm.toFixed(0), unit: 'm²', secondary: `${sqmToSqft(sqm).toFixed(0)} sq.ft` };
+  };
+  
+  const siteAreaFormatted = formatArea(site.area);
+  
   return (
-    <div className="bg-white rounded-lg shadow p-4 space-y-4">
-      <h3 className="text-lg font-semibold">Project Metrics</h3>
-      
-      {/* Site Info */}
-      <div className="border-b pb-3">
-        <div className="text-sm text-gray-600 mb-1">Site Area</div>
-        <div className="text-xl font-bold text-indigo-600">
-          {metrics.totalPlotArea.toFixed(0)} m²
+    <div className="space-y-4">
+      {/* Site Info Card */}
+      <div className="bg-gradient-to-br from-indigo-500 to-purple-600 rounded-lg shadow p-4 text-white">
+        <div className="text-sm opacity-80 mb-1">Site Area</div>
+        <div className="text-2xl font-bold">
+          {siteAreaFormatted.value} {siteAreaFormatted.unit}
         </div>
-        <div className="text-sm text-gray-500">
-          {sqmToSqft(metrics.totalPlotArea).toFixed(0)} sq.ft
+        <div className="text-sm opacity-80">
+          {siteAreaFormatted.secondary}
         </div>
       </div>
       
-      {/* FSI */}
-      <div className="border-b pb-3">
-        <div className="flex justify-between items-center mb-1">
-          <span className="text-sm text-gray-600">FSI (Floor Space Index)</span>
-          <ComplianceBadge compliant={metrics.compliance.fsi} />
+      {/* FSI Card */}
+      <div className="bg-white rounded-lg shadow p-4">
+        <div className="flex justify-between items-center mb-2">
+          <span className="text-sm font-medium text-gray-700">FSI (Floor Space Index)</span>
+          <ComplianceBadge compliant={metrics?.compliance.fsi ?? true} />
         </div>
         <div className="flex items-end gap-2">
-          <span className="text-2xl font-bold">{metrics.fsi.toFixed(2)}</span>
-          <span className="text-gray-500 text-sm mb-1">/ {metrics.allowedFSI.toFixed(2)} allowed</span>
+          <span className="text-3xl font-bold">{metrics?.fsi.toFixed(2) ?? '0.00'}</span>
+          <span className="text-gray-500 text-sm mb-1">/ {allowedFSI.toFixed(2)} allowed</span>
         </div>
         <div className="mt-2 h-2 bg-gray-200 rounded-full overflow-hidden">
           <div 
-            className={`h-full rounded-full ${
-              metrics.compliance.fsi ? 'bg-green-500' : 'bg-red-500'
+            className={`h-full rounded-full transition-all ${
+              (metrics?.compliance.fsi ?? true) ? 'bg-green-500' : 'bg-red-500'
             }`}
-            style={{ width: `${Math.min(100, (metrics.fsi / metrics.allowedFSI) * 100)}%` }}
+            style={{ width: `${Math.min(100, ((metrics?.fsi ?? 0) / allowedFSI) * 100)}%` }}
           />
         </div>
       </div>
       
-      {/* Ground Coverage */}
-      <div className="border-b pb-3">
-        <div className="flex justify-between items-center mb-1">
-          <span className="text-sm text-gray-600">Ground Coverage</span>
-          <ComplianceBadge compliant={metrics.compliance.coverage} />
+      {/* Ground Coverage Card */}
+      <div className="bg-white rounded-lg shadow p-4">
+        <div className="flex justify-between items-center mb-2">
+          <span className="text-sm font-medium text-gray-700">Ground Coverage</span>
+          <ComplianceBadge compliant={metrics?.compliance.coverage ?? true} />
         </div>
         <div className="flex items-end gap-2">
-          <span className="text-2xl font-bold">{(metrics.groundCoverage * 100).toFixed(1)}%</span>
-          <span className="text-gray-500 text-sm mb-1">/ {(metrics.allowedCoverage * 100).toFixed(0)}% max</span>
+          <span className="text-3xl font-bold">{((metrics?.groundCoverage ?? 0) * 100).toFixed(1)}%</span>
+          <span className="text-gray-500 text-sm mb-1">/ {(zoneRules.maxGroundCoverage * 100).toFixed(0)}% max</span>
         </div>
         <div className="mt-2 h-2 bg-gray-200 rounded-full overflow-hidden">
           <div 
-            className={`h-full rounded-full ${
-              metrics.compliance.coverage ? 'bg-green-500' : 'bg-red-500'
+            className={`h-full rounded-full transition-all ${
+              (metrics?.compliance.coverage ?? true) ? 'bg-green-500' : 'bg-red-500'
             }`}
-            style={{ width: `${Math.min(100, (metrics.groundCoverage / metrics.allowedCoverage) * 100)}%` }}
+            style={{ width: `${Math.min(100, ((metrics?.groundCoverage ?? 0) / zoneRules.maxGroundCoverage) * 100)}%` }}
           />
         </div>
       </div>
       
-      {/* Area Summary */}
-      <div className="border-b pb-3">
-        <div className="text-sm text-gray-600 mb-2">Area Summary</div>
-        <div className="space-y-1 text-sm">
+      {/* Area Summary Card */}
+      <div className="bg-white rounded-lg shadow p-4">
+        <div className="text-sm font-medium text-gray-700 mb-3">Area Summary</div>
+        <div className="space-y-2 text-sm">
           <div className="flex justify-between">
             <span className="text-gray-600">Total Built-up</span>
-            <span className="font-medium">{sqmToSqft(metrics.totalBuiltUpArea).toFixed(0)} sq.ft</span>
+            <span className="font-semibold">{sqmToSqft(metrics?.totalBuiltUpArea ?? 0).toLocaleString()} sq.ft</span>
           </div>
           <div className="flex justify-between">
             <span className="text-gray-600">Total Carpet</span>
-            <span className="font-medium">{sqmToSqft(metrics.totalCarpetArea).toFixed(0)} sq.ft</span>
+            <span className="font-semibold">{sqmToSqft(metrics?.totalCarpetArea ?? 0).toLocaleString()} sq.ft</span>
           </div>
           <div className="flex justify-between">
             <span className="text-gray-600">Total Super Built-up</span>
-            <span className="font-medium">{sqmToSqft(metrics.totalSuperBuiltUpArea).toFixed(0)} sq.ft</span>
+            <span className="font-semibold">{sqmToSqft(metrics?.totalSuperBuiltUpArea ?? 0).toLocaleString()} sq.ft</span>
           </div>
         </div>
       </div>
       
-      {/* Unit Count */}
-      <div className="border-b pb-3">
-        <div className="flex justify-between items-center mb-2">
-          <span className="text-sm text-gray-600">Total Units</span>
-          <span className="text-2xl font-bold text-indigo-600">{metrics.totalUnits}</span>
+      {/* Units Card */}
+      <div className="bg-white rounded-lg shadow p-4">
+        <div className="flex justify-between items-center mb-3">
+          <span className="text-sm font-medium text-gray-700">Total Units</span>
+          <span className="text-3xl font-bold text-indigo-600">{metrics?.totalUnits ?? 0}</span>
         </div>
         
-        {Object.keys(metrics.unitMix).length > 0 && (
-          <div className="space-y-1">
+        {metrics && Object.keys(metrics.unitMix).length > 0 && (
+          <div className="space-y-1 border-t pt-2">
             {Object.entries(metrics.unitMix).map(([bhk, count]) => (
               <div key={bhk} className="flex justify-between text-sm">
                 <span className="text-gray-600">{bhk}</span>
@@ -142,56 +155,60 @@ export const MetricsDashboard: React.FC = () => {
             ))}
           </div>
         )}
+        
+        {(!metrics || metrics.totalUnits === 0) && (
+          <p className="text-xs text-gray-400">Generate layout to see unit breakdown</p>
+        )}
       </div>
       
-      {/* Parking */}
-      <div className="border-b pb-3">
-        <div className="flex justify-between items-center mb-1">
-          <span className="text-sm text-gray-600">Parking</span>
-          <ComplianceBadge compliant={metrics.compliance.parking} />
+      {/* Parking Card */}
+      <div className="bg-white rounded-lg shadow p-4">
+        <div className="flex justify-between items-center mb-3">
+          <span className="text-sm font-medium text-gray-700">Parking</span>
+          <ComplianceBadge compliant={metrics?.compliance.parking ?? true} />
         </div>
-        <div className="space-y-1 text-sm">
+        <div className="space-y-2 text-sm">
           <div className="flex justify-between">
             <span className="text-gray-600">Car (Required)</span>
-            <span className="font-medium">{metrics.parkingRequired} ECS</span>
+            <span className="font-semibold">{metrics?.parkingRequired ?? 0} ECS</span>
           </div>
           <div className="flex justify-between">
             <span className="text-gray-600">Car (Provided)</span>
-            <span className="font-medium">{metrics.parkingProvided} ECS</span>
+            <span className="font-semibold">{metrics?.parkingProvided ?? 0} ECS</span>
           </div>
           <div className="flex justify-between">
             <span className="text-gray-600">Two-Wheeler</span>
-            <span className="font-medium">{metrics.twoWheelerRequired} spaces</span>
+            <span className="font-semibold">{metrics?.twoWheelerRequired ?? 0} spaces</span>
           </div>
         </div>
       </div>
       
       {/* Compliance Summary */}
-      <div>
-        <div className="text-sm text-gray-600 mb-2">Compliance Status</div>
+      <div className="bg-white rounded-lg shadow p-4">
+        <div className="text-sm font-medium text-gray-700 mb-3">Compliance Status</div>
         <div className="grid grid-cols-2 gap-2">
-          <div className={`p-2 rounded text-xs ${metrics.compliance.fsi ? 'bg-green-50' : 'bg-red-50'}`}>
+          <div className={`p-2 rounded text-xs ${(metrics?.compliance.fsi ?? true) ? 'bg-green-50' : 'bg-red-50'}`}>
             <div className="font-medium">FSI</div>
-            <div className={metrics.compliance.fsi ? 'text-green-600' : 'text-red-600'}>
-              {metrics.compliance.fsi ? 'Compliant' : 'Non-compliant'}
+            <div className={(metrics?.compliance.fsi ?? true) ? 'text-green-600' : 'text-red-600'}>
+              {(metrics?.compliance.fsi ?? true) ? 'Compliant' : 'Non-compliant'}
             </div>
           </div>
-          <div className={`p-2 rounded text-xs ${metrics.compliance.coverage ? 'bg-green-50' : 'bg-red-50'}`}>
+          <div className={`p-2 rounded text-xs ${(metrics?.compliance.coverage ?? true) ? 'bg-green-50' : 'bg-red-50'}`}>
             <div className="font-medium">Coverage</div>
-            <div className={metrics.compliance.coverage ? 'text-green-600' : 'text-red-600'}>
-              {metrics.compliance.coverage ? 'Compliant' : 'Non-compliant'}
+            <div className={(metrics?.compliance.coverage ?? true) ? 'text-green-600' : 'text-red-600'}>
+              {(metrics?.compliance.coverage ?? true) ? 'Compliant' : 'Non-compliant'}
             </div>
           </div>
-          <div className={`p-2 rounded text-xs ${metrics.compliance.parking ? 'bg-green-50' : 'bg-red-50'}`}>
+          <div className={`p-2 rounded text-xs ${(metrics?.compliance.parking ?? true) ? 'bg-green-50' : 'bg-red-50'}`}>
             <div className="font-medium">Parking</div>
-            <div className={metrics.compliance.parking ? 'text-green-600' : 'text-red-600'}>
-              {metrics.compliance.parking ? 'Adequate' : 'Insufficient'}
+            <div className={(metrics?.compliance.parking ?? true) ? 'text-green-600' : 'text-red-600'}>
+              {(metrics?.compliance.parking ?? true) ? 'Adequate' : 'Insufficient'}
             </div>
           </div>
-          <div className={`p-2 rounded text-xs ${metrics.compliance.height ? 'bg-green-50' : 'bg-red-50'}`}>
+          <div className={`p-2 rounded text-xs ${(metrics?.compliance.height ?? true) ? 'bg-green-50' : 'bg-red-50'}`}>
             <div className="font-medium">Height</div>
-            <div className={metrics.compliance.height ? 'text-green-600' : 'text-red-600'}>
-              {metrics.compliance.height ? 'Within limit' : 'Exceeds limit'}
+            <div className={(metrics?.compliance.height ?? true) ? 'text-green-600' : 'text-red-600'}>
+              {(metrics?.compliance.height ?? true) ? 'Within limit' : 'Exceeds limit'}
             </div>
           </div>
         </div>

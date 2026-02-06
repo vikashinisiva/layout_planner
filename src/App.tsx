@@ -7,8 +7,10 @@ import { ThreeView } from './components/ThreeView';
 import { MetricsDashboard, UnitMixPanel } from './components/MetricsDashboard';
 import { FinancialAnalysis, AreaStatementPanel } from './components/FinancialAnalysis';
 import { ProjectSettings } from './components/ProjectSettings';
+import { BuildingLayoutGenerator } from './components/BuildingLayoutGenerator';
 import { useAppStore } from './store/appStore';
 import { generateLayout, getDefaultUnitMix } from './utils/layoutGenerator';
+import type { BuildingVariant } from './services/floorPlanApi';
 import './index.css';
 
 const STEPS = [
@@ -36,6 +38,48 @@ function App() {
   
   const [selectedFloor, setSelectedFloor] = useState(1);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [generatedVariants, setGeneratedVariants] = useState<BuildingVariant[]>([]);
+  const [selectedVariant, setSelectedVariant] = useState<BuildingVariant | null>(null);
+  
+  // Handle variant selection from the BuildingLayoutGenerator
+  const handleVariantSelected = (variant: BuildingVariant) => {
+    setSelectedVariant(variant);
+    
+    // Convert variant to building format and add to store
+    if (variant.floors.length > 0) {
+      const floor = variant.floors[0];
+      const newBuilding = {
+        id: variant.id,
+        name: variant.name,
+        footprint: floor.boundaryPolygonLatLon?.map(c => ({ lng: c.lng, lat: c.lat })) || [],
+        floors: variant.floors.length,
+        floorHeight: 3.0,
+        units: floor.units.map(u => ({
+          id: u.id,
+          unitTypeId: u.unitTypeId,
+          x: u.x,
+          y: u.y,
+          rotation: u.rotation,
+          floor: u.floor,
+        })),
+        stiltParking: true,
+        liftCores: floor.cores.length,
+        staircases: floor.cores.reduce((sum, c) => sum + c.stairCount, 0),
+      };
+      
+      // Clear existing buildings and add the new one
+      useAppStore.getState().clearBuildings();
+      addBuilding(newBuilding);
+    }
+  };
+  
+  // Handle generation complete
+  const handleGenerationComplete = (variants: BuildingVariant[]) => {
+    setGeneratedVariants(variants);
+    if (variants.length > 0) {
+      handleVariantSelected(variants[0]);
+    }
+  };
   
   const handleGenerateLayout = async () => {
     if (!site || site.area === 0) {
@@ -157,35 +201,55 @@ function App() {
           
           {activeStep === 2 && (
             <div className="space-y-4">
-              <UnitMixPanel />
+              {site && site.area > 0 ? (
+                <BuildingLayoutGenerator
+                  siteBoundary={site.coordinates}
+                  siteArea={site.area}
+                  city={city}
+                  zone={zone}
+                  roadWidth={roadWidth}
+                  onVariantSelected={handleVariantSelected}
+                  onGenerationComplete={handleGenerationComplete}
+                />
+              ) : (
+                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                  <div className="flex items-center gap-2 text-yellow-800">
+                    <span className="text-xl">⚠️</span>
+                    <div>
+                      <div className="font-semibold">No Site Defined</div>
+                      <div className="text-sm">Please go to Step 1 and draw a site boundary first</div>
+                    </div>
+                  </div>
+                </div>
+              )}
               
-              <button
-                onClick={handleGenerateLayout}
-                disabled={!site || isGenerating}
-                className="w-full px-4 py-4 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg hover:from-indigo-700 hover:to-purple-700 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 text-lg font-medium"
-              >
-                {isGenerating ? (
-                  <>
-                    <svg className="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                    </svg>
-                    Generating...
-                  </>
-                ) : (
-                  <>
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                    </svg>
-                    AI Generate Layout
-                  </>
-                )}
-              </button>
-              
-              {!site && (
-                <p className="text-sm text-yellow-600 bg-yellow-50 rounded p-2">
-                  ⚠️ Please go to Step 1 and draw a site boundary first
-                </p>
+              {/* Quick Generate Button (fallback) */}
+              {site && (
+                <div className="border-t pt-4">
+                  <button
+                    onClick={handleGenerateLayout}
+                    disabled={!site || isGenerating}
+                    className="w-full px-4 py-3 border-2 border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  >
+                    {isGenerating ? (
+                      <>
+                        <svg className="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                        </svg>
+                        Generating...
+                      </>
+                    ) : (
+                      <>
+                        <span>⚡</span>
+                        Quick Generate (Rule-Based)
+                      </>
+                    )}
+                  </button>
+                  <p className="text-xs text-gray-500 text-center mt-2">
+                    Use rule-based algorithm for faster results
+                  </p>
+                </div>
               )}
             </div>
           )}

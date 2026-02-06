@@ -146,3 +146,27 @@ export interface VastuScore {
   toiletPlacement: boolean;
   recommendations: string[];
 }
+
+// AI-Generated Floor Plan Types (from GAT-Net backend)
+export interface GeneratedRoom {
+  type: 'living' | 'bedroom' | 'kitchen' | 'bathroom' | string;
+  category: number;  // 0=living, 1=bedroom, 2=kitchen, 3=bathroom
+  coordinates: [number, number][];  // Polygon coordinates in local/model space
+  centroid: [number, number];
+  width: number;
+  height: number;
+  area: number;
+  inside_bedroom?: boolean;  // True if bath/kitchen is inside a bedroom
+}
+
+export interface GeneratedFloorPlan {
+  success: boolean;
+  rooms: GeneratedRoom[];
+  boundary: [number, number][];
+  total_area: number;
+  message?: string;
+  // Metadata for coordinate transformation
+  siteCenter?: Coordinate;
+  bhkConfig?: string;
+  doorSide?: 'north' | 'south' | 'east' | 'west';
+}

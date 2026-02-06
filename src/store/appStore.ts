@@ -9,7 +9,8 @@ import type {
   ZoneType, 
   PlacedUnit,
   Metrics,
-  FinancialAnalysis
+  FinancialAnalysis,
+  GeneratedFloorPlan
 } from '../types';
 
 interface AppState {
@@ -39,6 +40,9 @@ interface AppState {
   metrics: Metrics | null;
   financials: FinancialAnalysis | null;
   
+  // AI-Generated Floor Plan
+  generatedFloorPlan: GeneratedFloorPlan | null;
+  
   // Actions
   setCity: (city: CityType) => void;
   setZone: (zone: ZoneType) => void;
@@ -65,6 +69,9 @@ interface AppState {
   setMetrics: (metrics: Metrics) => void;
   setFinancials: (financials: FinancialAnalysis) => void;
   
+  setGeneratedFloorPlan: (plan: GeneratedFloorPlan | null) => void;
+  clearGeneratedFloorPlan: () => void;
+  
   resetProject: () => void;
   loadProject: (project: Project) => void;
 }
@@ -84,6 +91,7 @@ const initialState = {
   usePremiumFSI: false,
   metrics: null,
   financials: null,
+  generatedFloorPlan: null,
 };
 
 export const useAppStore = create<AppState>((set) => ({
@@ -151,6 +159,9 @@ export const useAppStore = create<AppState>((set) => ({
   
   setMetrics: (metrics) => set({ metrics }),
   setFinancials: (financials) => set({ financials }),
+  
+  setGeneratedFloorPlan: (generatedFloorPlan) => set({ generatedFloorPlan }),
+  clearGeneratedFloorPlan: () => set({ generatedFloorPlan: null }),
   
   resetProject: () => set(initialState),
   
